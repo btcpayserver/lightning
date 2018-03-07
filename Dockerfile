@@ -249,6 +249,10 @@ ENV LIGHTNINGD_RPC_PORT=9835
 ENV LIGHTNINGD_PORT=9735
 ENV LIGHTNINGD_NETWORK=bitcoin
 
+RUN mkdir $LIGHTNINGD_DATA && \
+    mkdir $LIGHTNINGD_DATA/plugins && \
+    touch $LIGHTNINGD_DATA/config
+
 EXPOSE 9735 9835
 VOLUME ["/root/.lightning"]
 ENTRYPOINT ["/entrypoint.sh"]
