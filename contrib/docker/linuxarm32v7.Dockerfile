@@ -5,7 +5,7 @@
 # * final: Copy the binaries required at runtime
 # The resulting image uploaded to dockerhub will only contain what is needed for runtime.
 # From the root of the repository, run "docker build -t yourimage:yourtag -f contrib/linuxarm32v7.Dockerfile ."
-FROM debian:buster-slim as downloader
+FROM debian:bullseye-slim as downloader
 
 RUN set -ex \
 	&& apt-get update \
@@ -45,11 +45,18 @@ RUN mkdir /opt/litecoin && cd /opt/litecoin \
     && tar -xzvf litecoin.tar.gz $BD/litecoin-cli --strip-components=1 --exclude=*-qt \
     && rm litecoin.tar.gz
 
-FROM debian:buster-slim as builder
+ENV DESCHASHPLUGIN_URL https://github.com/fiatjaf/sparko/releases/download/invoicewithdescriptionhash-v1.2/invoicewithdescriptionhash_linux_arm
+ENV DESCHASHPLUGIN_SHA256 D268BFAD4CCDA9670A17ED9FACC79F81CDD22756C76ED4A94BE59282E4E819F0
+RUN mkdir /opt/deschashplugin && cd /opt/deschashplugin \
+    && wget -qO invoicewithdescriptionhash "$DESCHASHPLUGIN_URL" \
+    && echo "$DESCHASHPLUGIN_SHA256  invoicewithdescriptionhash" | sha256sum -c - \
+    && chmod a+x invoicewithdescriptionhash
+
+FROM debian:bullseye-slim as builder
 
 ENV LIGHTNINGD_VERSION=master
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates autoconf automake build-essential gettext git libtool python3 python3-pip python3-setuptools python3-mako wget gnupg dirmngr git lowdown \
-  libc6-armhf-cross gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+  libc6-armhf-cross gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf curl
 
 ENV target_host=arm-linux-gnueabihf
 
@@ -62,12 +69,12 @@ STRIP=${target_host}-strip \
 QEMU_LD_PREFIX=/usr/${target_host} \
 HOST=${target_host}
 
-RUN wget -q https://zlib.net/zlib-1.2.12.tar.gz \
-&& tar xvf zlib-1.2.12.tar.gz \
-&& cd zlib-1.2.12 \
+RUN wget -q https://zlib.net/zlib-1.2.13.tar.gz \
+&& tar xvf zlib-1.2.13.tar.gz \
+&& cd zlib-1.2.13 \
 && ./configure --prefix=$QEMU_LD_PREFIX \
 && make \
-&& make install && cd .. && rm zlib-1.2.12.tar.gz && rm -rf zlib-1.2.12
+&& make install && cd .. && rm zlib-1.2.13.tar.gz && rm -rf zlib-1.2.13
 
 RUN apt-get install -y --no-install-recommends unzip tclsh \
 && wget -q https://www.sqlite.org/2019/sqlite-src-3290000.zip \
@@ -83,7 +90,6 @@ RUN wget -q https://gmplib.org/download/gmp/gmp-6.1.2.tar.xz \
 && ./configure --disable-assembly --prefix=$QEMU_LD_PREFIX --host=${target_host} \
 && make \
 && make install && cd .. && rm gmp-6.1.2.tar.xz && rm -rf gmp-6.1.2
-
 COPY --from=downloader /usr/bin/qemu-arm-static /usr/bin/qemu-arm-static
 WORKDIR /opt/lightningd
 COPY . /tmp/lightning
@@ -92,12 +98,19 @@ RUN git clone --recursive /tmp/lightning . && \
 
 ARG DEVELOPER=0
 ENV PYTHON_VERSION=3
-RUN ./configure --prefix=/tmp/lightning_install --enable-static && make -j3 DEVELOPER=${DEVELOPER} && make install
+RUN curl -sSL https://install.python-poetry.org | python3 - \
+    && pip3 install -U pip \
+    && pip3 install -U wheel \
+    && /root/.local/bin/poetry install
 
-FROM arm32v7/debian:buster-slim as final
+RUN ./configure --prefix=/tmp/lightning_install --enable-static && \
+    make DEVELOPER=${DEVELOPER} && \
+    /root/.local/bin/poetry run make install
+
+FROM arm32v7/debian:bullseye-slim as final
 COPY --from=downloader /usr/bin/qemu-arm-static /usr/bin/qemu-arm-static
 COPY --from=downloader /opt/tini /usr/bin/tini
-RUN apt-get update && apt-get install -y --no-install-recommends socat inotify-tools python3 python3-pip \
+RUN apt-get update && apt-get install -y --no-install-recommends socat inotify-tools python3 python3-pip libpq5\
     && rm -rf /var/lib/apt/lists/* 
 
 ENV LIGHTNINGD_DATA=/root/.lightning
@@ -106,11 +119,15 @@ ENV LIGHTNINGD_PORT=9735
 ENV LIGHTNINGD_NETWORK=bitcoin
 
 RUN mkdir $LIGHTNINGD_DATA && \
+    mkdir /etc/bundledplugins && \
+    mkdir $LIGHTNINGD_DATA/plugins && \
     touch $LIGHTNINGD_DATA/config
 VOLUME [ "/root/.lightning" ]
 COPY --from=builder /tmp/lightning_install/ /usr/local/
 COPY --from=downloader /opt/bitcoin/bin /usr/bin
 COPY --from=downloader /opt/litecoin/bin /usr/bin
+COPY --from=downloader /opt/deschashplugin $LIGHTNINGD_DATA/plugins
+COPY --from=downloader /opt/deschashplugin /etc/bundledplugins
 COPY tools/docker-entrypoint.sh entrypoint.sh
 
 EXPOSE 9735 9835
