@@ -45,6 +45,14 @@ RUN mkdir /opt/litecoin && cd /opt/litecoin \
     && tar -xzvf litecoin.tar.gz $BD/litecoin-cli --strip-components=1 --exclude=*-qt \
     && rm litecoin.tar.gz
 
+ENV DESCHASHPLUGIN_URL https://github.com/nbd-wtf/invoicewithdescriptionhash/releases/download/v1.4/invoicewithdescriptionhash-v1.4-linux-arm64.tar.gz
+ENV DESCHASHPLUGIN_SHA256 d48c3e5aede77bd9cb72d78689ce12c0327f624435cb0496b3eacb92df416363
+RUN mkdir /opt/deschashplugin && cd /opt/deschashplugin \
+    && wget -qO invoicewithdescriptionhash.tar.gz "$DESCHASHPLUGIN_URL" \
+    && echo "$DESCHASHPLUGIN_SHA256  invoicewithdescriptionhash.tar.gz" | sha256sum -c - \
+    && tar -xzvf invoicewithdescriptionhash.tar.gz && rm invoicewithdescriptionhash.tar.gz \
+    && chmod a+x invoicewithdescriptionhash
+
 FROM debian:bullseye-slim as builder
 
 ENV LIGHTNINGD_VERSION=master
@@ -145,11 +153,15 @@ ENV LIGHTNINGD_PORT=9735
 ENV LIGHTNINGD_NETWORK=bitcoin
 
 RUN mkdir $LIGHTNINGD_DATA && \
+    mkdir /etc/bundledplugins && \
+    mkdir $LIGHTNINGD_DATA/plugins && \
     touch $LIGHTNINGD_DATA/config
 VOLUME [ "/root/.lightning" ]
 COPY --from=builder /tmp/lightning_install/ /usr/local/
 COPY --from=downloader /opt/bitcoin/bin /usr/bin
 COPY --from=downloader /opt/litecoin/bin /usr/bin
+COPY --from=downloader /opt/deschashplugin $LIGHTNINGD_DATA/plugins
+COPY --from=downloader /opt/deschashplugin /etc/bundledplugins
 COPY tools/docker-entrypoint.sh entrypoint.sh
 
 EXPOSE 9735 9835
