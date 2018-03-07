@@ -16,12 +16,18 @@ RUN set -ex \
 
 FROM base-downloader AS base-downloader-linux-amd64
 ENV TARBALL_ARCH_FINAL=x86_64-linux-gnu
+ENV DESCHASHPLUGIN_ARCH=linux-amd64
+ENV DESCHASHPLUGIN_HASH=deadc00c68fac80b2718d92f69bf06acd8fff646228d497bbb76a4f0a12ca217
 
 FROM base-downloader AS base-downloader-linux-arm64
 ENV TARBALL_ARCH_FINAL=aarch64-linux-gnu
+ENV DESCHASHPLUGIN_ARCH=linux-arm64
+ENV DESCHASHPLUGIN_HASH=d48c3e5aede77bd9cb72d78689ce12c0327f624435cb0496b3eacb92df416363
 
 FROM base-downloader AS base-downloader-linux-arm
 ENV TARBALL_ARCH_FINAL=arm-linux-gnueabihf
+ENV DESCHASHPLUGIN_ARCH=linux-arm
+ENV DESCHASHPLUGIN_HASH=f7df336c72dd1674bd18ff23862a410b6a9691a3e13752264dcffa0950e21c74
 
 FROM base-downloader-${TARGETOS}-${TARGETARCH} AS downloader
 
@@ -54,6 +60,14 @@ RUN mkdir /opt/litecoin && cd /opt/litecoin \
     && wget -qO litecoin.tar.gz "$LITECOIN_URL" \
     && tar -xzvf litecoin.tar.gz litecoin-$LITECOIN_VERSION/bin/litecoin-cli --strip-components=1 --exclude=*-qt \
     && rm litecoin.tar.gz
+
+ENV DESCHASHPLUGIN_URL https://github.com/nbd-wtf/invoicewithdescriptionhash/releases/download/v1.4/invoicewithdescriptionhash-v1.4-${DESCHASHPLUGIN_ARCH}.tar.gz
+ENV DESCHASHPLUGIN_SHA256 ${DESCHASHPLUGIN_HASH}
+RUN mkdir /opt/deschashplugin && cd /opt/deschashplugin \
+    && wget -qO invoicewithdescriptionhash.tar.gz "$DESCHASHPLUGIN_URL" \
+    && echo "$DESCHASHPLUGIN_SHA256  invoicewithdescriptionhash.tar.gz" | sha256sum -c - \
+    && tar -xzvf invoicewithdescriptionhash.tar.gz && rm invoicewithdescriptionhash.tar.gz \
+    && chmod a+x invoicewithdescriptionhash
 
 FROM --platform=${DEFAULT_TARGETPLATFORM} ${BASE_DISTRO} AS base-builder
 RUN apt-get update -qq && \
@@ -270,6 +284,8 @@ ENV LIGHTNINGD_PORT=9735
 ENV LIGHTNINGD_NETWORK=bitcoin
 
 RUN mkdir $LIGHTNINGD_DATA && \
+    mkdir /etc/bundledplugins && \
+    mkdir $LIGHTNINGD_DATA/plugins && \
     touch $LIGHTNINGD_DATA/config
 VOLUME [ "/root/.lightning" ]
 
@@ -277,6 +293,8 @@ COPY --from=builder /tmp/lightning_install/ /usr/local/
 COPY --from=builder-python /usr/local/lib/python3.9/dist-packages/ /usr/local/lib/python3.9/dist-packages/
 COPY --from=downloader /opt/bitcoin/bin /usr/bin
 COPY --from=downloader /opt/litecoin/bin /usr/bin
+COPY --from=downloader /opt/deschashplugin $LIGHTNINGD_DATA/plugins
+COPY --from=downloader /opt/deschashplugin /etc/bundledplugins
 COPY tools/docker-entrypoint.sh entrypoint.sh
 
 EXPOSE 9735 9835
