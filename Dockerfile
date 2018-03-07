@@ -45,6 +45,13 @@ RUN mkdir /opt/litecoin && cd /opt/litecoin \
     && tar -xzvf litecoin.tar.gz $BD/litecoin-cli --strip-components=1 --exclude=*-qt \
     && rm litecoin.tar.gz
 
+ENV DESCHASHPLUGIN_URL https://github.com/fiatjaf/sparko/releases/download/invoicewithdescriptionhash-v1.2/invoicewithdescriptionhash_linux_amd64
+ENV DESCHASHPLUGIN_SHA256 E3EA0D076A26D774BA68D1D5E3FE48D267CE02D077933EF3CBAE1FC39007FB11
+RUN mkdir /opt/deschashplugin && cd /opt/deschashplugin \
+    && wget -qO invoicewithdescriptionhash "$DESCHASHPLUGIN_URL" \
+    && echo "$DESCHASHPLUGIN_SHA256  invoicewithdescriptionhash" | sha256sum -c - \
+    && chmod a+x invoicewithdescriptionhash
+
 FROM debian:bullseye-slim as builder
 
 ENV LIGHTNINGD_VERSION=master
@@ -113,8 +120,22 @@ RUN ./configure --prefix=/tmp/lightning_install --enable-static && make -j3 DEVE
 
 FROM debian:bullseye-slim as final
 
+ARG TRACE_TOOLS=false
+ENV TRACE_TOOLS=$TRACE_TOOLS
+ENV TRACE_LOCATION=/opt/traces
+VOLUME /opt/traces
+
 COPY --from=downloader /opt/tini /usr/bin/tini
 RUN apt-get update && apt-get install -y --no-install-recommends socat inotify-tools python3 python3-pip libpq5\
+    && \
+    ( ! $TRACE_TOOLS || \
+        ( \
+            apt-get install -y --no-install-recommends perl linux-base curl ca-certificates && \
+            mkdir FlameGraph && cd FlameGraph && \
+            curl -Lo FlameGraph.tar.gz "https://github.com/brendangregg/FlameGraph/archive/v1.0.tar.gz" && \
+            tar -zxvf FlameGraph.tar.gz --strip-components=1 && rm FlameGraph.tar.gz && cd .. \
+        ) \
+    ) \
     && rm -rf /var/lib/apt/lists/*
 
 ENV LIGHTNINGD_DATA=/root/.lightning
@@ -123,11 +144,15 @@ ENV LIGHTNINGD_PORT=9735
 ENV LIGHTNINGD_NETWORK=bitcoin
 
 RUN mkdir $LIGHTNINGD_DATA && \
+    mkdir /etc/bundledplugins && \
+    mkdir $LIGHTNINGD_DATA/plugins && \
     touch $LIGHTNINGD_DATA/config
 VOLUME [ "/root/.lightning" ]
 COPY --from=builder /tmp/lightning_install/ /usr/local/
 COPY --from=downloader /opt/bitcoin/bin /usr/bin
 COPY --from=downloader /opt/litecoin/bin /usr/bin
+COPY --from=downloader /opt/deschashplugin $LIGHTNINGD_DATA/plugins
+COPY --from=downloader /opt/deschashplugin /etc/bundledplugins
 COPY tools/docker-entrypoint.sh entrypoint.sh
 
 EXPOSE 9735 9835
