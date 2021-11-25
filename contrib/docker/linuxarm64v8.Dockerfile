@@ -1,5 +1,5 @@
 # This dockerfile is meant to cross compile with a x64 machine for a arm64v8 host
-# It is using multi stage build: 
+# It is using multi stage build:
 # * downloader: Download litecoin/bitcoin and qemu binaries needed for Core Lightning
 # * builder: Cross compile Core Lightning dependencies, then Core Lightning itself with static linking
 # * final: Copy the binaries required at runtime
@@ -98,13 +98,14 @@ RUN git clone --recursive /tmp/lightning . && \
 
 ARG DEVELOPER=0
 ENV PYTHON_VERSION=3
+RUN pip3 install mrkd
 RUN ./configure --prefix=/tmp/lightning_install --enable-static && make -j3 DEVELOPER=${DEVELOPER} && make install
 
 FROM arm64v8/debian:buster-slim as final
 COPY --from=downloader /usr/bin/qemu-aarch64-static /usr/bin/qemu-aarch64-static
 COPY --from=downloader /opt/tini /usr/bin/tini
 RUN apt-get update && apt-get install -y --no-install-recommends socat inotify-tools python3 python3-pip \
-    && rm -rf /var/lib/apt/lists/* 
+    && rm -rf /var/lib/apt/lists/*
 
 ENV LIGHTNINGD_DATA=/root/.lightning
 ENV LIGHTNINGD_RPC_PORT=9835
