@@ -416,6 +416,8 @@ bool is_dnsaddr(const char *arg)
 			continue;
 		if (arg[i] == '-')
 			continue;
+		if (arg[i] == '_')
+			continue;
 		return false;
 	}
 	return true;
