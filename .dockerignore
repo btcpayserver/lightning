@@ -1,3 +1,5 @@
 Dockerfile
 contrib/docker/Dockerfile.*
+contrib/docker/linuxarm32v7.Dockerfile
+contrib/docker/linuxarm64v8.Dockerfile
 .circleci/config.yml
