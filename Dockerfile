@@ -103,7 +103,8 @@ RUN apt-get update -qq && \
 
 ENV PATH="/root/.local/bin:$PATH"
 ENV PYTHON_VERSION=3
-RUN curl -sSL https://install.python-poetry.org | python3 -
+RUN curl -sSL https://install.python-poetry.org | python3 - && \
+    poetry self add poetry-plugin-export
 RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.9 1
 RUN pip3 install --upgrade pip setuptools wheel
 
@@ -116,7 +117,9 @@ RUN git clone --recursive /tmp/lightning . && \
     git checkout $(git --work-tree=/tmp/lightning --git-dir=/tmp/lightning/.git rev-parse HEAD)
 
 # Do not build python plugins (clnrest & wss-proxy) here, python doesn't support cross compilation.
-RUN sed -i '/^clnrest\|^wss-proxy/d' pyproject.toml && poetry export -o requirements.txt --without-hashes
+RUN sed -i '/^clnrest\|^wss-proxy/d' pyproject.toml && \
+    poetry lock && \
+    poetry export -o requirements.txt --without-hashes
 RUN pip3 install -r requirements.txt && pip3 cache purge
 WORKDIR /
 
@@ -211,7 +214,8 @@ RUN ( ! [ "${target_host}" = "arm-linux-gnueabihf" ] ) || \
 
 # Ensure that the desired grpcio-tools & protobuf versions are installed
 # https://github.com/ElementsProject/lightning/pull/7376#issuecomment-2161102381
-RUN poetry lock --no-update && poetry install
+RUN poetry lock && poetry install && \
+    poetry self add poetry-plugin-export
 
 # Ensure that git differences are removed before making bineries, to avoid `-modded` suffix
 # poetry.lock changed due to pyln-client, pyln-proto and pyln-testing version updates
@@ -222,9 +226,9 @@ RUN ./configure --prefix=/tmp/lightning_install --enable-static && poetry run ma
 
 # Export the requirements for the plugins so we can install them in builder-python stage
 WORKDIR /opt/lightningd/plugins/clnrest
-RUN poetry export -o requirements.txt --without-hashes
+RUN poetry lock && poetry export -o requirements.txt --without-hashes
 WORKDIR /opt/lightningd/plugins/wss-proxy
-RUN poetry export -o requirements.txt --without-hashes
+RUN poetry lock && poetry export -o requirements.txt --without-hashes
 WORKDIR /opt/lightningd
 RUN echo 'RUSTUP_INSTALL_OPTS="${RUSTUP_INSTALL_OPTS}"' > /tmp/rustup_install_opts.txt
 
