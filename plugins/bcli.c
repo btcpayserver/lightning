@@ -643,7 +643,7 @@ static struct command_result *process_getpeerinfo(struct bitcoin_cli *bcli)
 	start_bitcoin_cli(NULL, bcli->cmd, process_getblockfrompeer, true,
 			  BITCOIND_HIGH_PRIO, stash, "getblockfrompeer",
 			  stash->block_hash,
-			  take(tal_fmt(NULL, "%i", stash->peers[0])), NULL);
+			  take(tal_fmt(NULL, "%i", stash->peers[tal_count(stash->peers) - 1])), NULL);
 
 	return command_still_pending(bcli->cmd);
 }
@@ -679,7 +679,7 @@ static struct command_result *process_getrawblock(struct bitcoin_cli *bcli)
 				    NULL, bcli->cmd, process_getblockfrompeer,
 				    true, BITCOIND_HIGH_PRIO, stash,
 				    "getblockfrompeer", stash->block_hash,
-				    take(tal_fmt(NULL, "%i", stash->peers[0])),
+				    take(tal_fmt(NULL, "%i", stash->peers[tal_count(stash->peers) - 1])),
 				    NULL);
 
 				return command_still_pending(bcli->cmd);
