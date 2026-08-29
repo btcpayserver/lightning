@@ -43,6 +43,18 @@ RUN gpg --quiet --import gpg/* && \
 
 RUN tar xzf ${BITCOIN_TARBALL} --strip-components=1
 
+FROM base-host AS lightning-downloader-linux-amd64
+
+ARG cln_release_arch=amd64
+ARG cln_release_sha256=53ddf124fe7058b6a2fc059d104976cc54ba5be21dc55b295cd82d01cabeb39c
+
+FROM base-host AS lightning-downloader-linux-arm64
+
+ARG cln_release_arch=arm64
+ARG cln_release_sha256=a6e89d49468dac83122d6b795796b7f2ebb55eab6181b419f1cf9a73aeae3965
+
+FROM base-host AS lightning-downloader-linux-arm
+
 FROM base-host AS base-builder
 
 RUN apt-get update && \
@@ -93,74 +105,30 @@ ARG target_arch_dpkg=armhf
 ARG target_arch_rust=armv7-unknown-linux-gnueabihf
 ARG COPTFLAGS="-O2 -march=armv7-a -mfpu=vfpv3-d16 -mfloat-abi=hard"
 
-FROM base-builder-${TARGETOS}-${TARGETARCH} AS builder
+FROM lightning-downloader-${TARGETOS}-${TARGETARCH} AS builder
 
-ENV LIGHTNINGD_VERSION=master
+ARG TARGETOS
+ARG TARGETARCH
+ARG cln_release_arch
+ARG cln_release_sha256
+ARG LIGHTNINGD_VERSION=v26.06.7
+ARG CLN_RELEASE_URL=https://github.com/ElementsProject/lightning/releases/download/${LIGHTNINGD_VERSION}
+ARG CLN_TARBALL=clightning-${LIGHTNINGD_VERSION}-Ubuntu-22.04-${cln_release_arch}.tar.xz
 
-RUN dpkg --add-architecture ${target_arch_dpkg}
+RUN test -n "${cln_release_arch}" || \
+    (echo "No Core Lightning ${LIGHTNINGD_VERSION} release binary is available for ${TARGETOS}/${TARGETARCH}" >&2; exit 1)
 
-# Install architecture-independent libraries
+WORKDIR /opt/lightning-release
+
+ADD ${CLN_RELEASE_URL}/${CLN_TARBALL} .
+
 RUN apt-get update && \
-    apt-get install -qq -y --no-install-recommends \
-        python3-dev \
-        lowdown
-
-# Install target-arch libraries
-RUN apt-get install -qq -y --no-install-recommends \
-    pkg-config:${target_arch_dpkg} \
-    libffi-dev:${target_arch_dpkg} \
-    libicu-dev:${target_arch_dpkg} \
-    zlib1g-dev:${target_arch_dpkg} \
-    libsqlite3-dev:${target_arch_dpkg} \
-    libpq-dev:${target_arch_dpkg} \
-    libsodium-dev:${target_arch_dpkg} \
-    crossbuild-essential-${target_arch_dpkg}
-
-ARG AR=${target_arch}-ar
-ARG AS=${target_arch}-as
-ARG CC=${target_arch}-gcc
-ARG CXX=${target_arch}-g++
-ARG LD=${target_arch}-ld
-ARG STRIP=${target_arch}-strip
-ARG TARGET=${target_arch_rust}
-ARG RUST_PROFILE=release
-ARG VERSION
-ENV VERSION=${VERSION}
-
-#TODO: set all the following cargo config options via env variables (https://doc.rust-lang.org/cargo/reference/environment-variables.html)
-RUN mkdir -p .cargo && tee .cargo/config.toml <<EOF
-
-[build]
-target = "${target_arch_rust}"
-rustflags = ["-C", "target-cpu=generic"]
-
-[target.${target_arch_rust}]
-linker = "${CC}"
-
-EOF
-
-WORKDIR /opt
-
-RUN ./install-uv.sh -q
-RUN ./install-rust.sh -y -q --profile minimal --component rustfmt --target ${target_arch_rust}
-
-ENV PATH="/root/.cargo/bin:/root/.local/bin:${PATH}"
-ENV PKG_CONFIG_PATH=/usr/lib/${target_arch}/pkgconfig
-ENV PKG_CONFIG_LIBDIR=/usr/lib/${target_arch}/pkgconfig
-
-WORKDIR /opt/lightningd
-
-#TODO: find a way to avoid copying the .git/ directory (it always invalidates the cache)
-COPY .git/ .git/
-RUN git submodule update --init --recursive --jobs $(nproc) --depth 1
-
-RUN ./configure --prefix=/tmp/lightning_install --enable-static --disable-compat --disable-valgrind
-RUN uv run make install-program -j$(nproc)
-
-RUN find /tmp/lightning_install -type f -executable -exec \
-    file {} + | \
-    awk -F: '/ELF/ {print $1}' | \
-    xargs -r ${STRIP} --strip-unneeded
+    apt-get install -qq -y --no-install-recommends xz-utils && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
+    echo "${cln_release_sha256}  ${CLN_TARBALL}" | sha256sum -c - && \
+    mkdir -p /tmp/lightning_install && \
+    tar -xJf ${CLN_TARBALL} -C /tmp/lightning_install --strip-components=2
 
 # VLS builder stage (only used by lightningd-vls-signer)
 FROM base-builder-${TARGETOS}-${TARGETARCH} AS vls-builder
