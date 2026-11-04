@@ -181,8 +181,9 @@ is specific to LND.
    repository's test instructions, including `PLAYWRIGHT_HEADLESS=true`.
 3. Check the job logs to confirm the intended image was pulled and the CLN tests
    ran. Record the tested commit, image tag/digest, and successful run links in
-   the handoff. Updating the testnet, mutinynet, and altcoin Compose files does
-   not mean those environments were exercised by the regtest CI job.
+   the handoff. BTCPay Server's CI currently uses `docker-compose.altcoins.yml`
+   for its regtest environment; updating the other Compose files does not mean
+   their separate environments were exercised.
 
 Read each repository's current agent instructions and workflows rather than
 copying stale test commands. Investigate failures before proceeding; do not
