@@ -1,6 +1,6 @@
 ---
 name: update-btcpay-cln
-description: Update the BTCPay Core Lightning fork to an upstream CLN release and publish a btcpayserver/lightning image. Use when bumping Core Lightning, rewriting btcpaymaster, creating a basedon-* tag, or publishing the Lightning Docker image.
+description: Update BTCPay's Core Lightning fork, publish its image, and validate downstream integration before deployment. Use when bumping Core Lightning, rewriting btcpaymaster, or publishing a basedon-* image.
 ---
 
 # Update BTCPay Core Lightning
@@ -154,8 +154,52 @@ docker run --rm --entrypoint lightningd \
 The reported version can include the `basedon-` prefix because BTCPay's
 `Makefile` derives it from the repository tag.
 
-After publication, update `btcpayserver-docker` according to that repository's
-own agent instructions and generated-image workflow.
+## Run Downstream Integration Tests
+
+Publishing an image and checking `lightningd --version` do not establish BTCPay
+compatibility. Update the test containers to the exact published tag in both
+repositories, then run their integration suites before advancing the deployment
+bump. A green run using the previous image is not evidence for the new release.
+
+This follows the downstream sequence in the
+[LND update guide](https://github.com/btcpayserver/lnd/blob/master/UPDATING-LND-NOTES.md#7-downstream-repos---exact-files).
+Use CLN's image and services below; LND's wallet-unlock and macaroon startup suite
+is specific to LND.
+
+1. In `btcpayserver/BTCPayServer.Lightning`, update both
+   `btcpayserver/lightning` references in `tests/docker-compose.yml`
+   (`lightningd` and `lightningd_dest`). Open a PR and require the repository's
+   Docker Compose integration tests to pass against the new image.
+2. In `btcpayserver/btcpayserver`, update both CLN services
+   (`merchant_lightningd` and `customer_lightningd`) in each of:
+   - `BTCPayServer.Tests/docker-compose.yml`
+   - `BTCPayServer.Tests/docker-compose.altcoins.yml`
+   - `BTCPayServer.Tests/docker-compose.mutinynet.yml`
+   - `BTCPayServer.Tests/docker-compose.testnet.yml`
+   Open a PR linking the Lightning library PR and published image. Require the
+   BTCPay Server integration job to pass on the PR's current head. Follow the
+   repository's test instructions, including `PLAYWRIGHT_HEADLESS=true`.
+3. Check the job logs to confirm the intended image was pulled and the CLN tests
+   ran. Record the tested commit, image tag/digest, and successful run links in
+   the handoff. Updating the testnet, mutinynet, and altcoin Compose files does
+   not mean those environments were exercised by the regtest CI job.
+
+Read each repository's current agent instructions and workflows rather than
+copying stale test commands. Investigate failures before proceeding; do not
+disable CLN tests to make a version bump pass.
+
+## Update Deployment
+
+After both downstream integration suites pass, update the CLN image in
+`btcpayserver-docker` according to that repository's agent instructions and
+generated-image workflow. Link both test PRs and their successful runs in the
+handoff. Keep the deployment PR a draft while validation is incomplete.
+
+Validate the deployment change through that repository's required CI and an
+appropriate CLN-backed upgrade check. Record what was exercised (startup,
+node connectivity, invoice/payment flows) and any gaps; a version command alone
+is not an upgrade or payment test. Use a disposable environment unless the
+operator has authorized changes to an existing server.
 
 ## Recover From A Wrong Tag
 
