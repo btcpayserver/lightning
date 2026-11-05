@@ -1,5 +1,10 @@
 # Core Lightning (CLN): A specification compliant Lightning Network implementation in C
 
+For BTCPay image updates, follow the
+[Core Lightning maintenance procedure](https://github.com/btcpayserver/image-maintenance/blob/master/docs/lightning.md).
+Start maintenance agents from
+[image-maintenance](https://github.com/btcpayserver/image-maintenance) to load the shared instructions.
+
 Core Lightning (previously c-lightning) is a lightweight, highly customizable and [standard compliant][std] implementation of the Lightning Network protocol.
 
 * [Getting Started](#getting-started)
